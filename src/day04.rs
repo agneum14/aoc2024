@@ -1,3 +1,4 @@
+use core::panic;
 use std::fs::read_to_string;
 
 use itertools::Itertools;
@@ -57,12 +58,44 @@ impl WordSearch {
         }
         count
     }
+
+    fn reverse_diag(c: char) -> char {
+        match c {
+            'M' => 'S',
+            'S' => 'M',
+            _ => panic!("reversed {}", c),
+        }
+    }
+
+    fn x_mas_count(&self) -> usize {
+        let mut count = 0;
+        for (y, line) in self.letters.iter().enumerate() {
+            for (x, c) in line.iter().enumerate() {
+                if *c != 'A' {
+                    continue;
+                }
+                let (y, x) = (y as isize, x as isize);
+
+                let top_left = self.get(y - 1, x - 1);
+                let top_right = self.get(y - 1, x + 1);
+                if (top_left == Some('M') || top_left == Some('S'))
+                    && self.get(y + 1, x + 1) == Some(WordSearch::reverse_diag(top_left.unwrap()))
+                    && (top_right == Some('M') || top_right == Some('S'))
+                    && self.get(y + 1, x - 1) == Some(WordSearch::reverse_diag(top_right.unwrap()))
+                {
+                    count += 1
+                }
+            }
+        }
+        count
+    }
 }
 
 pub fn run() {
     let input = read_to_string("inputs/day04.txt").unwrap();
     let ws = WordSearch::new(&input);
-    println!("XMAS appearances: {}", ws.xmas_count())
+    println!("XMAS appearances: {}", ws.xmas_count());
+    println!("X-MAS appearances: {}", ws.x_mas_count())
 }
 
 #[cfg(test)]
@@ -73,5 +106,11 @@ mod tests {
     fn xmas_count() {
         let ws = WordSearch::new(&read_to_string("inputs/day04_small.txt").unwrap());
         assert_eq!(18, ws.xmas_count())
+    }
+
+    #[test]
+    fn x_mas_count() {
+        let ws = WordSearch::new(&read_to_string("inputs/day04_small.txt").unwrap());
+        assert_eq!(9, ws.x_mas_count())
     }
 }
