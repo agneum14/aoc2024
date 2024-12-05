@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use std::{
     collections::{HashMap, HashSet},
     fs::read_to_string,
@@ -40,6 +41,14 @@ impl Printer {
             .map(|x| x.middle_page())
             .sum()
     }
+
+    fn incorrect_sum(&self) -> u32 {
+        self.updates
+            .iter()
+            .filter(|x| !x.correct(&self.rules))
+            .map(|x| x.order(&self.rules).middle_page())
+            .sum()
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -74,12 +83,33 @@ impl Update {
     fn middle_page(&self) -> u32 {
         self.pages[self.pages.len() / 2]
     }
+
+    fn order(&self, rules: &HashMap<u32, HashSet<u32>>) -> Self {
+        let mut pages = self.pages.clone();
+        let page_set = self.pages.iter().collect::<HashSet<_>>();
+
+        for left in rules.keys().into_iter().filter(|x| page_set.contains(x)) {
+            let mut sequence = pages
+                .iter()
+                .enumerate()
+                .filter(|(_, x)| *x == left || rules[left].contains(x));
+            let fst = sequence.next().unwrap();
+            if fst.1 != left {
+                let old_idx = sequence.filter(|(_, x)| *x == left).next().unwrap().0 + 1;
+                pages.insert(fst.0, *left);
+                pages.remove(old_idx);
+            }
+        }
+
+        Self { pages }
+    }
 }
 
 pub fn run() {
     let input = read_to_string("inputs/day05.txt").unwrap();
     let printer = Printer::new(&input);
-    println!("Correct sum: {}", printer.correct_sum())
+    println!("Correct sum: {}", printer.correct_sum());
+    println!("Incorrect sum: {}", printer.incorrect_sum())
 }
 
 #[cfg(test)]
@@ -90,5 +120,11 @@ mod tests {
     fn correct_sum() {
         let printer = Printer::new(&read_to_string("inputs/day05_small.txt").unwrap());
         assert_eq!(143, printer.correct_sum())
+    }
+
+    #[test]
+    fn incorrect_sum() {
+        let printer = Printer::new(&read_to_string("inputs/day05_small.txt").unwrap());
+        assert_eq!(123, printer.incorrect_sum())
     }
 }
