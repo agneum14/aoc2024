@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use core::panic;
 use std::fs::read_to_string;
 
