@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use std::fs::read_to_string;
 
 use itertools::Itertools;
@@ -22,6 +23,14 @@ impl Bridge {
         self.equations
             .iter()
             .filter(|x| x.possible())
+            .map(|x| x.target)
+            .sum()
+    }
+
+    fn total_calibration_concat(&self) -> i64 {
+        self.equations
+            .iter()
+            .filter(|x| x.possible_concat())
             .map(|x| x.target)
             .sum()
     }
@@ -59,12 +68,40 @@ impl Equation {
             }
         }
     }
+
+    fn possible_concat(&self) -> bool {
+        self.inner_possible_concat(self.values[0], 1)
+    }
+
+    fn inner_possible_concat(&self, cur: i64, idx: usize) -> bool {
+        match self.values.get(idx) {
+            None => cur == self.target,
+            Some(v) => {
+                if *v > self.target {
+                    true
+                } else {
+                    let idx = idx + 1;
+                    self.inner_possible_concat(cur * v, idx)
+                        || self.inner_possible_concat(cur + v, idx)
+                        || self.inner_possible_concat(Equation::concat(cur, *v), idx)
+                }
+            }
+        }
+    }
+
+    fn concat(cur: i64, v: i64) -> i64 {
+        format!("{}{}", cur, v).parse().unwrap()
+    }
 }
 
 pub fn run() {
     let input = read_to_string("inputs/day07.txt").unwrap();
     let bridge = Bridge::new(&input);
-    println!("Total calibration result: {}", bridge.total_calibration())
+    println!("Total calibration result: {}", bridge.total_calibration());
+    println!(
+        "Total calibration result with concat: {}",
+        bridge.total_calibration_concat()
+    )
 }
 
 #[cfg(test)]
@@ -75,5 +112,11 @@ mod tests {
     fn total_calibration() {
         let bridge = Bridge::new(&read_to_string("inputs/day07_small.txt").unwrap());
         assert_eq!(3749, bridge.total_calibration())
+    }
+
+    #[test]
+    fn total_calibration_concat() {
+        let bridge = Bridge::new(&read_to_string("inputs/day07_small.txt").unwrap());
+        assert_eq!(11387, bridge.total_calibration_concat())
     }
 }
