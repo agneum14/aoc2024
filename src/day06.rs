@@ -1,3 +1,6 @@
+#![allow(dead_code)]
+use itertools::Itertools;
+use rayon::prelude::*;
 use std::{
     collections::{HashMap, HashSet},
     fs::read_to_string,
@@ -39,27 +42,38 @@ impl Map {
     }
 
     fn distinct_positions(&self) -> usize {
-        let mut visited = HashSet::from([self.start]);
-        self.walk(&mut visited, Direction::North, self.start)
+        self.visited().len()
     }
 
     fn different_obstructions(&self) -> usize {
-        (0..self.y_max)
-            .flat_map(|y| (0..self.x_max).map(move |x| (y, x)))
-            .filter(|pos| *pos != self.start && self.grid.get(pos) != Some(&Space::Obstacle))
+        // (0..self.y_max)
+        //     .flat_map(|y| (0..self.x_max).map(move |x| (y, x)))
+        //     .filter(|pos| *pos != self.start && self.grid.get(pos) != Some(&Space::Obstacle))
+        //     .map(|pos| self.cycles(pos))
+        //     .filter(|x| *x)
+        //     .count()
+        self.visited()
+            .into_iter()
+            .collect_vec()
+            .into_par_iter()
+            .filter(|pos| *pos != self.start)
             .map(|pos| self.cycles(pos))
             .filter(|x| *x)
             .count()
     }
 
+    fn visited(&self) -> HashSet<(isize, isize)> {
+        self.walk(HashSet::new(), Direction::North, self.start)
+    }
+
     fn walk(
         &self,
-        visited: &mut HashSet<(isize, isize)>,
+        mut visited: HashSet<(isize, isize)>,
         direction: Direction,
         position: (isize, isize),
-    ) -> usize {
+    ) -> HashSet<(isize, isize)> {
         if self.grid.get(&position).is_none() {
-            return visited.len();
+            return visited;
         }
         visited.insert(position);
 
