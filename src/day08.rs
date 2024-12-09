@@ -32,68 +32,54 @@ impl Map {
         }
     }
 
+    fn exists(&self, pos: &(isize, isize)) -> bool {
+        let (y, x) = pos;
+        *y >= 0 && *x >= 0 && *y < self.y_max && *x < self.x_max
+    }
+
     fn antinodes(&self) -> usize {
         let mut antinodes = HashSet::new();
         for nodes in self.antennas.values() {
-            for (fst, snd) in nodes.iter().tuple_combinations() {
-                let y_diff = fst.0.abs_diff(snd.0) as isize;
-                let ys = if fst.0 <= snd.0 {
-                    (fst.0 - y_diff, snd.0 + y_diff)
-                } else {
-                    (fst.0 + y_diff, snd.0 - y_diff)
-                };
-                let x_diff = fst.1.abs_diff(snd.1) as isize;
-                let xs = if fst.1 <= snd.1 {
-                    (fst.1 - x_diff, snd.1 + x_diff)
-                } else {
-                    (fst.1 + x_diff, snd.1 - x_diff)
-                };
-                [(ys.0, xs.0), (ys.1, xs.1)]
+            for (a, b) in nodes.iter().tuple_combinations() {
+                let vba = (a.0 - b.0, a.1 - b.1);
+                for p in [(a.0 + vba.0, a.1 + vba.1), (b.0 - vba.0, b.1 - vba.1)]
                     .into_iter()
-                    .filter(|(y, x)| *y >= 0 && *x >= 0 && *y < self.y_max && *x < self.x_max)
-                    .for_each(|pos| {
-                        antinodes.insert(pos);
+                    .filter(|pos| self.exists(pos))
+                {
+                    antinodes.insert(p);
+                }
+            }
+        }
+        antinodes.len()
+    }
+
+    fn harmonic_antinodes(&self) -> usize {
+        let mut antinodes = HashSet::new();
+        for nodes in self.antennas.values() {
+            for (a, b) in nodes.iter().tuple_combinations() {
+                let vba = (a.0 - b.0, a.1 - b.1);
+                self.harmonic_half(*a, vba)
+                    .into_iter()
+                    .chain(self.harmonic_half(*b, (vba.0 * -1, vba.1 * -1)))
+                    .for_each(|p| {
+                        antinodes.insert(p);
                     });
             }
         }
         antinodes.len()
     }
 
-    fn cont_antinodes(&self) -> usize {
-        let mut antinodes = HashSet::new();
-        for nodes in self.antennas.values() {
-            for (fst, snd) in nodes.iter().tuple_combinations() {
-                let m = (fst.0 - snd.0) as f64 / (fst.1 - snd.1) as f64;
-                let b = fst.0 as f64 - m * fst.1 as f64;
-                let eq = |x: isize| -> (isize, isize) {
-                    let y = m * x as f64 + b;
-                    (y.round() as isize, x)
-                };
-
-                let mut x = fst.1.min(snd.1);
-                let x_diff = fst.1.abs_diff(snd.1) as isize;
-                loop {
-                    let point = eq(x);
-                    if point.0 < 0 || point.1 < 0 || point.0 >= self.y_max || point.1 >= self.x_max
-                    {
-                        break;
-                    }
-                    antinodes.insert(point);
-                    x -= x_diff;
-                }
-                let mut x = fst.1.max(snd.1);
-                loop {
-                    let point = eq(x);
-                    if point.0 < 0 || point.1 < 0 || point.0 >= self.y_max || point.1 >= self.x_max
-                    {
-                        break;
-                    }
-                    antinodes.insert(point);
-                    x += x_diff;
-                }
+    fn harmonic_half(&self, p: (isize, isize), v: (isize, isize)) -> HashSet<(isize, isize)> {
+        let mut points = HashSet::from([p]);
+        let mut p = p;
+        loop {
+            p = (p.0 + v.0, p.1 + v.1);
+            if !self.exists(&p) {
+                break;
             }
+            points.insert(p);
         }
-        antinodes.len()
+        points
     }
 }
 
@@ -102,8 +88,8 @@ pub fn run() {
     let map = Map::new(&input);
     println!("Unique antinode locations: {}", map.antinodes());
     println!(
-        "Continuing unique antinode locations: {}",
-        map.cont_antinodes()
+        "Harmonic unique antinode locations: {}",
+        map.harmonic_antinodes()
     )
 }
 
@@ -118,8 +104,8 @@ mod tests {
     }
 
     #[test]
-    fn cont_antinodes() {
+    fn harmonic_antinodes() {
         let map = Map::new(&read_to_string("inputs/day08_small.txt").unwrap());
-        assert_eq!(34, map.cont_antinodes())
+        assert_eq!(34, map.harmonic_antinodes())
     }
 }
