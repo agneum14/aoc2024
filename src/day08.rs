@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use std::{
     collections::{HashMap, HashSet},
     fs::read_to_string,
@@ -57,12 +58,53 @@ impl Map {
         }
         antinodes.len()
     }
+
+    fn cont_antinodes(&self) -> usize {
+        let mut antinodes = HashSet::new();
+        for nodes in self.antennas.values() {
+            for (fst, snd) in nodes.iter().tuple_combinations() {
+                let m = (fst.0 - snd.0) as f64 / (fst.1 - snd.1) as f64;
+                let b = fst.0 as f64 - m * fst.1 as f64;
+                let eq = |x: isize| -> (isize, isize) {
+                    let y = m * x as f64 + b;
+                    (y.round() as isize, x)
+                };
+
+                let mut x = fst.1.min(snd.1);
+                let x_diff = fst.1.abs_diff(snd.1) as isize;
+                loop {
+                    let point = eq(x);
+                    if point.0 < 0 || point.1 < 0 || point.0 >= self.y_max || point.1 >= self.x_max
+                    {
+                        break;
+                    }
+                    antinodes.insert(point);
+                    x -= x_diff;
+                }
+                let mut x = fst.1.max(snd.1);
+                loop {
+                    let point = eq(x);
+                    if point.0 < 0 || point.1 < 0 || point.0 >= self.y_max || point.1 >= self.x_max
+                    {
+                        break;
+                    }
+                    antinodes.insert(point);
+                    x += x_diff;
+                }
+            }
+        }
+        antinodes.len()
+    }
 }
 
 pub fn run() {
     let input = read_to_string("inputs/day08.txt").unwrap();
     let map = Map::new(&input);
-    println!("Unique antinode locations: {}", map.antinodes())
+    println!("Unique antinode locations: {}", map.antinodes());
+    println!(
+        "Continuing unique antinode locations: {}",
+        map.cont_antinodes()
+    )
 }
 
 #[cfg(test)]
@@ -73,5 +115,11 @@ mod tests {
     fn antinodes() {
         let map = Map::new(&read_to_string("inputs/day08_small.txt").unwrap());
         assert_eq!(14, map.antinodes())
+    }
+
+    #[test]
+    fn cont_antinodes() {
+        let map = Map::new(&read_to_string("inputs/day08_small.txt").unwrap());
+        assert_eq!(34, map.cont_antinodes())
     }
 }
