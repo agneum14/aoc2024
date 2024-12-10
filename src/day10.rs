@@ -60,12 +60,40 @@ impl TopographicMap {
         self.trailhead_score_helper(nines, (y, x + 1), target);
         self.trailhead_score_helper(nines, (y, x - 1), target);
     }
+
+    fn trailhead_rating_sum(&self) -> usize {
+        self.trailheads
+            .iter()
+            .map(|x| self.trailhead_rating(*x))
+            .sum()
+    }
+
+    fn trailhead_rating(&self, trailhead: (isize, isize)) -> usize {
+        self.trailhead_rating_helper(trailhead, 0)
+    }
+
+    fn trailhead_rating_helper(&self, pos: (isize, isize), target: u32) -> usize {
+        if self.map.get(&pos) != Some(&target) {
+            return 0;
+        }
+        if target == 9 {
+            return 1;
+        }
+
+        let (y, x) = pos;
+        let target = target + 1;
+        self.trailhead_rating_helper((y + 1, x), target)
+            + self.trailhead_rating_helper((y - 1, x), target)
+            + self.trailhead_rating_helper((y, x + 1), target)
+            + self.trailhead_rating_helper((y, x - 1), target)
+    }
 }
 
 pub fn run() {
     let input = read_to_string("inputs/day10.txt").unwrap();
     let tm = TopographicMap::new(&input);
     println!("Trailhead score sum: {}", tm.trailhead_score_sum());
+    println!("Trailhead rating sum: {}", tm.trailhead_rating_sum());
 }
 
 #[cfg(test)]
@@ -76,5 +104,11 @@ mod tests {
     fn trailhead_score_sum() {
         let tm = TopographicMap::new(&read_to_string("inputs/day10_small.txt").unwrap());
         assert_eq!(36, tm.trailhead_score_sum())
+    }
+
+    #[test]
+    fn trailhead_rating_sum() {
+        let tm = TopographicMap::new(&read_to_string("inputs/day10_small.txt").unwrap());
+        assert_eq!(81, tm.trailhead_rating_sum())
     }
 }
