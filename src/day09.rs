@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use std::fs::read_to_string;
 
 use itertools::Itertools;
@@ -72,14 +73,86 @@ impl Computer {
             })
             .sum()
     }
+
+    fn defragmented_checksum(&self) -> usize {
+        let max_id = match self
+            .disk
+            .iter()
+            .filter(|x| matches!(x.kind, BlopKind::File(_)))
+            .last()
+            .unwrap()
+            .kind
+        {
+            BlopKind::File(v) => v,
+            _ => unreachable!(),
+        };
+
+        let mut disk = self.disk.clone();
+        for id in (0..=max_id).rev() {
+            let (right, file) = disk
+                .iter()
+                .cloned()
+                .enumerate()
+                .rfind(|(_, b)| b.kind == BlopKind::File(id))
+                .unwrap();
+            if let Some((left, free)) = disk
+                .iter()
+                .cloned()
+                .enumerate()
+                .take(right)
+                .find(|(_, b)| matches!(b.kind, BlopKind::Free) && b.blocks >= file.blocks)
+            {
+                disk[right] = Blop {
+                    kind: BlopKind::Free,
+                    blocks: file.blocks,
+                };
+                disk[left] = file;
+                let diff = free.blocks - file.blocks;
+                if diff > 0 {
+                    disk.insert(
+                        left + 1,
+                        Blop {
+                            kind: BlopKind::Free,
+                            blocks: diff,
+                        },
+                    );
+                }
+
+                // combine adjacent free blocks
+                for right in 1..disk.len() {
+                    let left = right - 1;
+                    if disk[left].kind == BlopKind::Free && disk[right].kind == BlopKind::Free {
+                        disk[right].blocks += disk[left].blocks;
+                        disk[left].blocks = 0;
+                    }
+                }
+                disk.retain(|x| x.blocks > 0);
+            }
+        }
+
+        let mut i = 0;
+        let mut checksum = 0;
+        for b in disk.iter() {
+            if let BlopKind::File(id) = b.kind {
+                for _ in 0..b.blocks {
+                    checksum += id * i;
+                    i += 1;
+                }
+            } else {
+                i += b.blocks;
+            }
+        }
+        checksum
+    }
 }
 
+#[derive(Debug, Clone, Copy)]
 struct Blop {
     kind: BlopKind,
     blocks: usize,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum BlopKind {
     Free,
     File(usize),
@@ -89,6 +162,7 @@ pub fn run() {
     let input = read_to_string("inputs/day09.txt").unwrap();
     let c = Computer::new(&input);
     println!("Checksum: {}", c.checksum());
+    println!("Defragmented checksum: {}", c.defragmented_checksum());
 }
 
 #[cfg(test)]
@@ -101,5 +175,11 @@ mod tests {
     fn checksum() {
         let c = Computer::new(&read_to_string("inputs/day09_small.txt").unwrap());
         assert_eq!(1928, c.checksum())
+    }
+
+    #[test]
+    fn defragmented_checksum() {
+        let c = Computer::new(&read_to_string("inputs/day09_small.txt").unwrap());
+        assert_eq!(2858, c.defragmented_checksum())
     }
 }
