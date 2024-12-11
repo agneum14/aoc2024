@@ -1,30 +1,40 @@
-use std::fs::read_to_string;
-
-use itertools::Itertools;
+use std::{collections::HashMap, fs::read_to_string};
 
 struct Pluto {
-    stones: Vec<Stone>,
+    stones: HashMap<Stone, usize>,
 }
 
 impl Pluto {
     fn new(input: &str) -> Self {
-        let stones = input
+        let mut stones = HashMap::new();
+
+        for stone in input
             .split_whitespace()
             .map(|x| Stone::new(x.parse().unwrap()))
-            .collect_vec();
+        {
+            *stones.entry(stone).or_default() += 1;
+        }
+
         Self { stones }
     }
 
     fn blink(&self, count: usize) -> usize {
         let mut stones = self.stones.clone();
         for _ in 0..count {
-            stones = stones.iter().flat_map(|x| x.blink()).collect_vec();
+            let mut new_stones = HashMap::new();
+            for (stone, count) in stones.iter() {
+                for s in stone.blink() {
+                    *new_stones.entry(s).or_default() += count;
+                }
+            }
+
+            stones = new_stones;
         }
-        stones.len()
+        stones.values().sum()
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 struct Stone {
     engraving: u64,
 }
@@ -55,6 +65,7 @@ pub fn run() {
     let input = read_to_string("inputs/day11.txt").unwrap();
     let pluto = Pluto::new(&input);
     println!("Stones after 25 blinks: {}", pluto.blink(25));
+    println!("Stones after 75 blinks: {}", pluto.blink(75));
 }
 
 #[cfg(test)]
