@@ -1,4 +1,4 @@
-use std::fs::read_to_string;
+use std::{collections::HashSet, fs::read_to_string};
 
 use itertools::Itertools;
 use lazy_static::lazy_static;
@@ -63,6 +63,42 @@ impl Bathroom {
                 });
         q1 * q2 * q3 * q4
     }
+
+    fn find_tree(&self) -> usize {
+        let mut robots = self.robots.clone();
+        (0..)
+            .find(|_| {
+                let cond =
+                    robots.iter().map(|r| r.pos).collect::<HashSet<_>>().len() == robots.len();
+                robots = robots
+                    .iter()
+                    .map(|r| r.pace(self.x_max, self.y_max))
+                    .collect();
+                cond
+            })
+            .unwrap()
+    }
+
+    fn display(&self, seconds: usize) {
+        let mut robots = self.robots.clone();
+        for _ in 0..seconds {
+            robots = robots
+                .iter()
+                .map(|r| r.pace(self.x_max, self.y_max))
+                .collect();
+        }
+        let ps = robots.iter().map(|r| r.pos).collect::<HashSet<_>>();
+        for y in 0..self.y_max {
+            for x in 0..self.x_max {
+                if ps.contains(&(x, y)) {
+                    print!("#");
+                } else {
+                    print!(".")
+                }
+            }
+            println!()
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -103,7 +139,10 @@ impl Robot {
 
 pub fn run() {
     let bathroom = Bathroom::new(&read_to_string("inputs/day14.txt").unwrap(), 101, 103);
-    println!("Safety factor: {}", bathroom.safety_factor())
+    println!("Safety factor: {}", bathroom.safety_factor());
+    let seconds = bathroom.find_tree();
+    println!("Tree time: {}", seconds);
+    bathroom.display(seconds);
 }
 
 #[cfg(test)]
