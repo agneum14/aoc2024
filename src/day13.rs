@@ -1,6 +1,6 @@
+#![allow(dead_code)]
 use std::fs::read_to_string;
 
-use good_lp::{constraint, microlp, variable, ProblemVariables, Solution, SolverModel};
 use itertools::Itertools;
 use lazy_static::lazy_static;
 use regex::Regex;
@@ -9,6 +9,7 @@ lazy_static! {
     static ref RE: Regex = Regex::new(r"\d+").unwrap();
 }
 
+#[derive(Clone)]
 struct Lobby {
     machines: Vec<Machine>,
 }
@@ -19,16 +20,24 @@ impl Lobby {
         Self { machines }
     }
 
-    fn fewest_tokens(&self) -> u64 {
+    fn fewest_tokens(&self) -> i64 {
         self.machines.iter().filter_map(|m| m.tokens()).sum()
+    }
+
+    fn fewest_tokens_big(&self) -> i64 {
+        let mut big = self.clone();
+        for m in big.machines.iter_mut() {
+            m.prize = (m.prize.0 + 10000000000000, m.prize.1 + 10000000000000)
+        }
+        big.fewest_tokens()
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Copy)]
 struct Machine {
-    a: (i32, i32),
-    b: (i32, i32),
-    prize: (i32, i32),
+    a: (i64, i64),
+    b: (i64, i64),
+    prize: (i64, i64),
 }
 
 impl Machine {
@@ -49,31 +58,29 @@ impl Machine {
         }
     }
 
-    fn tokens(&self) -> Option<u64> {
-        let mut problem = ProblemVariables::new();
-        let a = problem.add(variable().integer().min(0).max(100));
-        let b = problem.add(variable().integer().min(0).max(100));
-        let solution = problem
-            .minimise(3 * a + b)
-            .using(microlp)
-            .with(constraint!(self.a.0 * a + self.b.0 * b == self.prize.0))
-            .with(constraint!(self.a.1 * a + self.b.1 * b == self.prize.1))
-            .solve();
-        if let Ok(s) = solution {
-            let mut data = [s.value(a), s.value(b)]
-                .into_iter()
-                .map(|x| x.round() as u64);
-            Some(data.next().unwrap() * 3 + data.next().unwrap())
-        } else {
+    fn tokens(&self) -> Option<i64> {
+        let d = determinant(self.a.0, self.b.0, self.a.1, self.b.1);
+        let da = determinant(self.prize.0, self.b.0, self.prize.1, self.b.1);
+        let db = determinant(self.a.0, self.prize.0, self.a.1, self.prize.1);
+        if da % d != 0 || db % d != 0 {
             None
+        } else {
+            let a = da / d;
+            let b = db / d;
+            Some(a * 3 + b)
         }
     }
+}
+
+fn determinant(a: i64, b: i64, c: i64, d: i64) -> i64 {
+    a * d - b * c
 }
 
 pub fn run() {
     let input = read_to_string("inputs/day13.txt").unwrap();
     let lobby = Lobby::new(&input);
     println!("Fewest tokens: {}", lobby.fewest_tokens());
+    println!("Fewest tokens big: {}", lobby.fewest_tokens_big());
 }
 
 #[cfg(test)]

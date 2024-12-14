@@ -6,7 +6,6 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-good_lp = { version = "1.10.0", features = ["microlp"] }
 itertools = "0.13.0"
 lazy_static = "1.5.0"
 rayon = "1.10.0"
