@@ -1,116 +1,213 @@
-#![allow(dead_code)]
-use std::{collections::HashMap, fs::read_to_string};
+use std::{
+    cmp::Reverse,
+    collections::{BinaryHeap, HashMap, HashSet},
+    fs::read_to_string,
+};
 
-type Point = (isize, isize);
+use itertools::Itertools;
 
 struct ReindeerMaze {
-    grid: HashMap<Point, Space>,
     start: Point,
     end: Point,
+    edges: HashMap<Node, Vec<(Node, i32)>>,
 }
 
 impl ReindeerMaze {
     fn new(input: &str) -> Self {
-        let mut grid = HashMap::new();
         let mut start = (0, 0);
         let mut end = (0, 0);
+        let mut edges = HashMap::new();
+
+        let mut grid = HashMap::new();
         for (y, line) in input.lines().enumerate() {
             for (x, c) in line.chars().enumerate() {
                 let p = (y as isize, x as isize);
-                if c == '#' {
-                    grid.insert(p, Space::Wall);
-                } else if c == 'E' {
-                    grid.insert(p, Space::End);
-                    end = p;
-                } else if c == 'S' {
+                if c == 'S' {
                     start = p;
+                } else if c == 'E' {
+                    end = p;
                 }
+                let c = if c == '#' { '#' } else { '.' };
+                grid.insert(p, c);
             }
         }
-        Self { grid, start, end }
+
+        // vertices are the start, end, and points with turns
+        let verts = grid
+            .iter()
+            .filter(|(p, c)| {
+                if **c != '.' {
+                    return false;
+                }
+                let surrounding = Direction::all()
+                    .into_iter()
+                    .filter(|d| grid.get(&p.adjacent(*d)) == Some(&'.'))
+                    .collect_vec();
+                if surrounding.len() < 2 {
+                    return false;
+                }
+                let fst = surrounding[0];
+                surrounding
+                    .into_iter()
+                    .filter(|d| *d != fst.opposite())
+                    .count()
+                    > 1
+            })
+            .map(|(p, _)| p)
+            .chain([start, end].iter())
+            .copied()
+            .collect::<HashSet<Point>>();
+
+        // retain only vertices and walls to find edges
+        let grid = grid
+            .into_iter()
+            .filter(|(p, c)| *c == '#' || verts.contains(p))
+            .collect::<HashMap<Point, char>>();
+
+        // find all edges
+        for v in verts {
+            for d in Direction::all().into_iter() {
+                let node = (v, d);
+
+                // edges that can be reached by turning
+                let turns = [d.clockwise(), d.counterclockwise()]
+                    .into_iter()
+                    .map(|d2| ((v, d2), 1000_i32));
+
+                // edges that can be reached by walking
+                let nearest = [match d {
+                    Direction::Up => grid
+                        .iter()
+                        .filter(|(p, _)| p.1 == v.1 && p.0 < v.0)
+                        .max_by_key(|(p, _)| p.0)
+                        .map(|x| (x, v.0 - x.0 .0)),
+                    Direction::Down => grid
+                        .iter()
+                        .filter(|(p, _)| p.1 == v.1 && p.0 > v.0)
+                        .min_by_key(|(p, _)| p.0)
+                        .map(|x| (x, x.0 .0 - v.0)),
+                    Direction::Left => grid
+                        .iter()
+                        .filter(|(p, _)| p.0 == v.0 && p.1 < v.1)
+                        .max_by_key(|(p, _)| p.1)
+                        .map(|x| (x, v.1 - x.0 .1)),
+                    Direction::Right => grid
+                        .iter()
+                        .filter(|(p, _)| p.0 == v.0 && p.1 > v.1)
+                        .min_by_key(|(p, _)| p.1)
+                        .map(|x| (x, x.0 .1 - v.1)),
+                }]
+                .into_iter()
+                .filter_map(|x| x)
+                .map(|(x, w)| (x, w as i32))
+                .filter(|((_, c), _)| **c == '.')
+                .map(|((p, _), w)| ((*p, d), w));
+
+                let node_edges = turns.chain(nearest).collect_vec();
+                edges.insert(node, node_edges);
+            }
+        }
+
+        Self { start, end, edges }
     }
 
-    fn lowest_score(&self) -> u32 {
-        let mut cache = HashMap::new();
-        self.lowest_score_helper(self.start, Direction::East, &mut cache, 0);
-        *[
-            Direction::North,
-            Direction::East,
-            Direction::South,
-            Direction::West,
-        ]
-        .into_iter()
-        .flat_map(|d| cache.get(&(self.end, d)))
-        .min()
-        .unwrap()
-    }
+    fn lowest_score(&self) -> i32 {
+        let mut unvisited = self.edges.keys().copied().collect::<HashSet<Node>>();
+        let start = (self.start, Direction::Right);
+        let mut distance_heap = unvisited
+            .iter()
+            .map(|n| (Reverse(i32::MAX), *n))
+            .collect::<BinaryHeap<_>>();
+        let mut distances = unvisited
+            .iter()
+            .map(|n| (*n, i32::MAX))
+            .collect::<HashMap<Node, i32>>();
+        distance_heap.push((Reverse(0), start));
+        distances.insert(start, 0);
 
-    fn lowest_score_helper(
-        &self,
-        p: Point,
-        facing: Direction,
-        cache: &mut HashMap<(Point, Direction), u32>,
-        score: u32,
-    ) {
-        let space = self.grid.get(&p);
-        if space == Some(&Space::Wall) {
-            return;
+        while !unvisited.is_empty() {
+            let (Reverse(src_w), src): (Reverse<i32>, Node) = distance_heap.pop().unwrap();
+
+            for (dst, edge_w) in self.edges.get(&src).unwrap() {
+                let new_w = src_w + edge_w;
+                if new_w < distances[dst] {
+                    distances.insert(*dst, new_w);
+                    distance_heap.push((Reverse(new_w), *dst));
+                }
+            }
+
+            unvisited.remove(&src);
         }
 
-        let lowest = *cache.entry((p, facing)).or_insert(u32::MAX);
-        if score < lowest {
-            cache.insert((p, facing), score);
-        }
-        if space == Some(&Space::End) || score >= lowest {
-            return;
-        }
-
-        let (y, x) = p;
-        let next_p = match facing {
-            Direction::North => (y - 1, x),
-            Direction::East => (y, x + 1),
-            Direction::South => (y + 1, x),
-            Direction::West => (y, x - 1),
-        };
-        self.lowest_score_helper(next_p, facing, cache, score + 1);
-        self.lowest_score_helper(p, facing.rotate_clockwise(), cache, score + 1000);
-        self.lowest_score_helper(p, facing.rotate_counterclockwise(), cache, score + 1000);
+        distances
+            .iter()
+            .filter(|x| x.0 .0 == self.end)
+            .map(|x| *x.1)
+            .min()
+            .unwrap()
     }
 }
 
-#[derive(PartialEq, Eq)]
-enum Space {
-    Wall,
-    End,
+type Point = (isize, isize);
+
+trait PointStuff {
+    fn adjacent(&self, d: Direction) -> Self;
 }
 
-#[derive(Hash, PartialEq, Eq, Clone, Copy)]
+impl PointStuff for Point {
+    fn adjacent(&self, d: Direction) -> Self {
+        let (y, x) = *self;
+        match d {
+            Direction::Up => (y - 1, x),
+            Direction::Down => (y + 1, x),
+            Direction::Left => (y, x - 1),
+            Direction::Right => (y, x + 1),
+        }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, PartialOrd, Ord)]
 enum Direction {
-    North,
-    East,
-    South,
-    West,
+    Up,
+    Down,
+    Left,
+    Right,
 }
 
 impl Direction {
-    fn rotate_clockwise(&self) -> Self {
+    fn opposite(&self) -> Self {
         match self {
-            Self::North => Self::East,
-            Self::East => Self::South,
-            Self::South => Self::West,
-            Self::West => Self::North,
+            Self::Up => Self::Down,
+            Self::Down => Self::Up,
+            Self::Left => Self::Right,
+            Self::Right => Self::Left,
         }
     }
 
-    fn rotate_counterclockwise(&self) -> Self {
+    fn clockwise(&self) -> Self {
         match self {
-            Self::North => Self::West,
-            Self::West => Self::South,
-            Self::South => Self::East,
-            Self::East => Self::North,
+            Self::Up => Self::Right,
+            Self::Right => Self::Down,
+            Self::Down => Self::Left,
+            Self::Left => Self::Up,
         }
     }
+
+    fn counterclockwise(&self) -> Self {
+        match self {
+            Self::Up => Self::Left,
+            Self::Left => Self::Down,
+            Self::Down => Self::Right,
+            Self::Right => Self::Up,
+        }
+    }
+
+    fn all() -> [Self; 4] {
+        [Self::Up, Self::Right, Self::Down, Self::Left]
+    }
 }
+
+type Node = (Point, Direction);
 
 pub fn run() {
     let input = read_to_string("inputs/day16.txt").unwrap();
