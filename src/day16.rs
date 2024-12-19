@@ -1,24 +1,22 @@
+#![allow(dead_code)]
 use std::{
     cmp::Reverse,
     collections::{BinaryHeap, HashMap, HashSet},
     fs::read_to_string,
 };
 
-use itertools::Itertools;
-
 struct ReindeerMaze {
     start: Point,
     end: Point,
-    edges: HashMap<Node, Vec<(Node, i32)>>,
+    edges: HashMap<Node, Vec<(Node, u32)>>,
 }
 
 impl ReindeerMaze {
     fn new(input: &str) -> Self {
         let mut start = (0, 0);
         let mut end = (0, 0);
-        let mut edges = HashMap::new();
 
-        let mut grid = HashMap::new();
+        let mut points = HashSet::new();
         for (y, line) in input.lines().enumerate() {
             for (x, c) in line.chars().enumerate() {
                 let p = (y as isize, x as isize);
@@ -27,124 +25,130 @@ impl ReindeerMaze {
                 } else if c == 'E' {
                     end = p;
                 }
-                let c = if c == '#' { '#' } else { '.' };
-                grid.insert(p, c);
+                if c != '#' {
+                    points.insert(p);
+                }
             }
         }
 
-        // vertices are the start, end, and points with turns
-        let verts = grid
-            .iter()
-            .filter(|(p, c)| {
-                if **c != '.' {
-                    return false;
+        let mut edges = HashMap::<_, Vec<_>>::new();
+        for point in points.iter() {
+            for d in Direction::all() {
+                let node = (*point, d);
+                let adj = point.adjacent(d);
+                if points.contains(&adj) {
+                    let new_node = (adj, d);
+                    edges.entry(node).or_default().push((new_node, 1));
                 }
-                let surrounding = Direction::all()
-                    .into_iter()
-                    .filter(|d| grid.get(&p.adjacent(*d)) == Some(&'.'))
-                    .collect_vec();
-                if surrounding.len() < 2 {
-                    return false;
+                for d2 in [d.counterclockwise(), d.clockwise()] {
+                    let new_node = (*point, d2);
+                    edges.entry(node).or_default().push((new_node, 1000));
                 }
-                let fst = surrounding[0];
-                surrounding
-                    .into_iter()
-                    .filter(|d| *d != fst.opposite())
-                    .count()
-                    > 1
-            })
-            .map(|(p, _)| p)
-            .chain([start, end].iter())
-            .copied()
-            .collect::<HashSet<Point>>();
-
-        // retain only vertices and walls to find edges
-        let grid = grid
-            .into_iter()
-            .filter(|(p, c)| *c == '#' || verts.contains(p))
-            .collect::<HashMap<Point, char>>();
-
-        // find all edges
-        for v in verts {
-            for d in Direction::all().into_iter() {
-                let node = (v, d);
-
-                // edges that can be reached by turning
-                let turns = [d.clockwise(), d.counterclockwise()]
-                    .into_iter()
-                    .map(|d2| ((v, d2), 1000_i32));
-
-                // edges that can be reached by walking
-                let nearest = [match d {
-                    Direction::Up => grid
-                        .iter()
-                        .filter(|(p, _)| p.1 == v.1 && p.0 < v.0)
-                        .max_by_key(|(p, _)| p.0)
-                        .map(|x| (x, v.0 - x.0 .0)),
-                    Direction::Down => grid
-                        .iter()
-                        .filter(|(p, _)| p.1 == v.1 && p.0 > v.0)
-                        .min_by_key(|(p, _)| p.0)
-                        .map(|x| (x, x.0 .0 - v.0)),
-                    Direction::Left => grid
-                        .iter()
-                        .filter(|(p, _)| p.0 == v.0 && p.1 < v.1)
-                        .max_by_key(|(p, _)| p.1)
-                        .map(|x| (x, v.1 - x.0 .1)),
-                    Direction::Right => grid
-                        .iter()
-                        .filter(|(p, _)| p.0 == v.0 && p.1 > v.1)
-                        .min_by_key(|(p, _)| p.1)
-                        .map(|x| (x, x.0 .1 - v.1)),
-                }]
-                .into_iter()
-                .filter_map(|x| x)
-                .map(|(x, w)| (x, w as i32))
-                .filter(|((_, c), _)| **c == '.')
-                .map(|((p, _), w)| ((*p, d), w));
-
-                let node_edges = turns.chain(nearest).collect_vec();
-                edges.insert(node, node_edges);
             }
         }
-
         Self { start, end, edges }
     }
 
-    fn lowest_score(&self) -> i32 {
-        let mut unvisited = self.edges.keys().copied().collect::<HashSet<Node>>();
+    fn dijkstra(&self) -> (HashMap<Node, Vec<Node>>, HashMap<Node, u32>, u32) {
+        let mut previous_nodes = HashMap::<_, Vec<_>>::new();
+        let mut distances = HashMap::new();
+        let mut unvisited = self.edges.keys().collect::<HashSet<&Node>>();
+        let mut q = BinaryHeap::new();
         let start = (self.start, Direction::Right);
-        let mut distance_heap = unvisited
-            .iter()
-            .map(|n| (Reverse(i32::MAX), *n))
-            .collect::<BinaryHeap<_>>();
-        let mut distances = unvisited
-            .iter()
-            .map(|n| (*n, i32::MAX))
-            .collect::<HashMap<Node, i32>>();
-        distance_heap.push((Reverse(0), start));
-        distances.insert(start, 0);
+        q.push((Reverse(0), start));
 
         while !unvisited.is_empty() {
-            let (Reverse(src_w), src): (Reverse<i32>, Node) = distance_heap.pop().unwrap();
-
-            for (dst, edge_w) in self.edges.get(&src).unwrap() {
-                let new_w = src_w + edge_w;
-                if new_w < distances[dst] {
-                    distances.insert(*dst, new_w);
-                    distance_heap.push((Reverse(new_w), *dst));
+            let (Reverse(src_score), src_node) = q.pop().unwrap();
+            if !unvisited.contains(&src_node) {
+                continue;
+            }
+            for (dst_node, dst_score) in self.edges.get(&src_node).unwrap() {
+                let new_score = src_score + dst_score;
+                q.push((Reverse(new_score), *dst_node));
+                if new_score == *distances.entry(*dst_node).or_insert(u32::MAX) {
+                    previous_nodes.entry(*dst_node).or_default().push(src_node);
+                }
+                if new_score < distances[dst_node] {
+                    distances.insert(*dst_node, new_score);
+                    previous_nodes.insert(*dst_node, [src_node].into());
                 }
             }
-
-            unvisited.remove(&src);
+            unvisited.remove(&src_node);
         }
 
-        distances
+        let lowest_score = *distances
             .iter()
             .filter(|x| x.0 .0 == self.end)
-            .map(|x| *x.1)
+            .map(|x| x.1)
             .min()
-            .unwrap()
+            .unwrap();
+        (previous_nodes, distances, lowest_score)
+    }
+
+    fn count_tiles(
+        &self,
+        previous_nodes: &HashMap<Node, Vec<Node>>,
+        distances: &HashMap<Node, u32>,
+        lowest_score: u32,
+    ) -> usize {
+        distances
+            .iter()
+            .filter(|x| x.0 .0 == self.end && *x.1 == lowest_score)
+            .flat_map(|x| {
+                let mut visited = Vec::new();
+                ReindeerMaze::count_tiles_helper(*x.0, previous_nodes, &mut visited);
+                visited
+            })
+            .map(|x| x.0)
+            .collect::<HashSet<_>>()
+            .len()
+    }
+
+    fn count_tiles_helper(
+        cur: Node,
+        previous_nodes: &HashMap<Node, Vec<Node>>,
+        visited: &mut Vec<Node>,
+    ) {
+        visited.push(cur);
+        if let Some(nodes) = previous_nodes.get(&cur) {
+            for node in nodes {
+                if !visited.contains(&node) {
+                    ReindeerMaze::count_tiles_helper(*node, previous_nodes, visited);
+                }
+            }
+        }
+    }
+}
+
+#[derive(PartialEq, Eq, Hash, Clone, Copy, PartialOrd, Ord)]
+enum Direction {
+    Up,
+    Down,
+    Left,
+    Right,
+}
+
+impl Direction {
+    fn all() -> [Self; 4] {
+        [Self::Up, Self::Down, Self::Left, Self::Right]
+    }
+
+    fn clockwise(&self) -> Self {
+        match self {
+            Self::Up => Self::Right,
+            Self::Right => Self::Down,
+            Self::Down => Self::Left,
+            Self::Left => Self::Up,
+        }
+    }
+
+    fn counterclockwise(&self) -> Self {
+        match self {
+            Self::Up => Self::Left,
+            Self::Left => Self::Down,
+            Self::Down => Self::Right,
+            Self::Right => Self::Up,
+        }
     }
 }
 
@@ -166,53 +170,14 @@ impl PointStuff for Point {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, PartialOrd, Ord)]
-enum Direction {
-    Up,
-    Down,
-    Left,
-    Right,
-}
-
-impl Direction {
-    fn opposite(&self) -> Self {
-        match self {
-            Self::Up => Self::Down,
-            Self::Down => Self::Up,
-            Self::Left => Self::Right,
-            Self::Right => Self::Left,
-        }
-    }
-
-    fn clockwise(&self) -> Self {
-        match self {
-            Self::Up => Self::Right,
-            Self::Right => Self::Down,
-            Self::Down => Self::Left,
-            Self::Left => Self::Up,
-        }
-    }
-
-    fn counterclockwise(&self) -> Self {
-        match self {
-            Self::Up => Self::Left,
-            Self::Left => Self::Down,
-            Self::Down => Self::Right,
-            Self::Right => Self::Up,
-        }
-    }
-
-    fn all() -> [Self; 4] {
-        [Self::Up, Self::Right, Self::Down, Self::Left]
-    }
-}
-
 type Node = (Point, Direction);
 
 pub fn run() {
-    let input = read_to_string("inputs/day16.txt").unwrap();
-    let rm = ReindeerMaze::new(&input);
-    println!("Lowest score: {}", rm.lowest_score());
+    let rm = ReindeerMaze::new(&read_to_string("inputs/day16.txt").unwrap());
+    let (previous_nodes, distances, lowest_score) = rm.dijkstra();
+    println!("Lowest score: {}", lowest_score);
+    let tile_count = rm.count_tiles(&previous_nodes, &distances, lowest_score);
+    println!("Tile count: {}", tile_count);
 }
 
 #[cfg(test)]
@@ -222,12 +187,34 @@ mod tests {
     #[test]
     fn lowest_score() {
         let rm = ReindeerMaze::new(&read_to_string("inputs/day16_small.txt").unwrap());
-        assert_eq!(7036, rm.lowest_score())
+        let (_, _, lowest_score) = rm.dijkstra();
+        assert_eq!(7036, lowest_score)
     }
 
     #[test]
     fn lowest_score2() {
         let rm = ReindeerMaze::new(&read_to_string("inputs/day16_small2.txt").unwrap());
-        assert_eq!(11048, rm.lowest_score())
+        let (_, _, lowest_score) = rm.dijkstra();
+        assert_eq!(11048, lowest_score)
+    }
+
+    #[test]
+    fn count_tiles() {
+        let rm = ReindeerMaze::new(&read_to_string("inputs/day16_small.txt").unwrap());
+        let (previous_nodes, distances, lowest_score) = rm.dijkstra();
+        assert_eq!(
+            45,
+            rm.count_tiles(&previous_nodes, &distances, lowest_score)
+        )
+    }
+
+    #[test]
+    fn count_tiles2() {
+        let rm = ReindeerMaze::new(&read_to_string("inputs/day16_small2.txt").unwrap());
+        let (previous_nodes, distances, lowest_score) = rm.dijkstra();
+        assert_eq!(
+            64,
+            rm.count_tiles(&previous_nodes, &distances, lowest_score)
+        )
     }
 }

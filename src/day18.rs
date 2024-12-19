@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use std::{
     collections::{HashMap, HashSet},
     fs::read_to_string,
