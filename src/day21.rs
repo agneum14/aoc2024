@@ -29,6 +29,9 @@ lazy_static! {
     ]);
 }
 
+const NUMERIC_HOLE: Point = (3, 0);
+const DIRECTIONAL_HOLE: Point = (0, 0);
+
 struct Starship {
     codes: Vec<Vec<char>>,
 }
@@ -47,49 +50,33 @@ impl Starship {
             .iter()
             .map(|code| {
                 let length = numeric_presses(code, directional_robots);
-                let s = code.iter().collect::<String>();
-                let s = s.trim_start_matches('0');
-                let s = s.replace("A", "");
-                let numeric = s.parse::<u64>().unwrap();
+                let numeric = code
+                    .iter()
+                    .collect::<String>()
+                    .trim_start_matches("0")
+                    .replace("A", "")
+                    .parse::<u64>()
+                    .unwrap();
                 length as u64 * numeric
             })
             .sum()
     }
 }
 
-fn numeric_presses(code: &Vec<char>, directional_robots: usize) -> usize {
+fn numeric_presses(code: &Vec<char>, robots: usize) -> usize {
     let mut arm = (3, 2);
     let mut length = 0;
     let mut cache = HashMap::new();
     for c in code {
         let target = NUMERIC_BUTTONS[c];
-        length += if (arm.0 + target.0 - arm.0, arm.1) == (3, 0) {
-            directional_presses(
-                &presses(false, &target, &arm),
-                0,
-                &mut cache,
-                directional_robots,
-            )
-        } else if (arm.0, arm.1 + target.1 - arm.1) == (3, 0) {
-            directional_presses(
-                &presses(true, &target, &arm),
-                0,
-                &mut cache,
-                directional_robots,
-            )
+        length += if (arm.0 + target.0 - arm.0, arm.1) == NUMERIC_HOLE {
+            directional_presses(&presses(false, &target, &arm), 0, &mut cache, robots)
+        } else if (arm.0, arm.1 + target.1 - arm.1) == NUMERIC_HOLE {
+            directional_presses(&presses(true, &target, &arm), 0, &mut cache, robots)
         } else {
-            directional_presses(
-                &presses(false, &target, &arm),
-                0,
-                &mut cache,
-                directional_robots,
+            directional_presses(&presses(false, &target, &arm), 0, &mut cache, robots).min(
+                directional_presses(&presses(true, &target, &arm), 0, &mut cache, robots),
             )
-            .min(directional_presses(
-                &presses(true, &target, &arm),
-                0,
-                &mut cache,
-                directional_robots,
-            ))
         };
         arm = target;
     }
@@ -99,51 +86,31 @@ fn numeric_presses(code: &Vec<char>, directional_robots: usize) -> usize {
 fn directional_presses(
     code: &Vec<char>,
     depth: usize,
-    cache: &mut HashMap<(String, usize), usize>,
-    directional_robots: usize,
+    cache: &mut HashMap<(Vec<char>, usize), usize>,
+    robots: usize,
 ) -> usize {
-    if depth == directional_robots {
+    if depth == robots {
         return code.len();
     }
-    let s = code.iter().collect::<String>();
-    if let Some(v) = cache.get(&(s.clone(), depth)) {
+    if let Some(v) = cache.get(&(code.to_owned(), depth)) {
         return *v;
     }
     let mut arm = (0, 2);
     let mut length = 0;
     for c in code {
         let target = DIRECTIONAL_BUTTONS[c];
-        length += if (arm.0 + target.0 - arm.0, arm.1) == (0, 0) {
-            directional_presses(
-                &presses(false, &target, &arm),
-                depth + 1,
-                cache,
-                directional_robots,
-            )
-        } else if (arm.0, arm.1 + target.1 - arm.1) == (0, 0) {
-            directional_presses(
-                &presses(true, &target, &arm),
-                depth + 1,
-                cache,
-                directional_robots,
-            )
+        length += if (target.0, arm.1) == DIRECTIONAL_HOLE {
+            directional_presses(&presses(false, &target, &arm), depth + 1, cache, robots)
+        } else if (arm.0, target.1) == DIRECTIONAL_HOLE {
+            directional_presses(&presses(true, &target, &arm), depth + 1, cache, robots)
         } else {
-            directional_presses(
-                &presses(false, &target, &arm),
-                depth + 1,
-                cache,
-                directional_robots,
+            directional_presses(&presses(false, &target, &arm), depth + 1, cache, robots).min(
+                directional_presses(&presses(true, &target, &arm), depth + 1, cache, robots),
             )
-            .min(directional_presses(
-                &presses(true, &target, &arm),
-                depth + 1,
-                cache,
-                directional_robots,
-            ))
         };
         arm = target
     }
-    cache.insert((s, depth), length);
+    cache.insert((code.to_owned(), depth), length);
     length
 }
 
