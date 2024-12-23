@@ -9,4 +9,8 @@ pub fn get_small(day: usize) -> String {
     read_to_string(format!("inputs/day{}_small.txt", day)).unwrap()
 }
 
+pub fn get_smalln(day: usize, n: usize) -> String {
+    read_to_string(format!("inputs/day{}_small{}.txt", day, n)).unwrap()
+}
+
 pub type Point = (isize, isize);
